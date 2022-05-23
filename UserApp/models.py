@@ -20,5 +20,12 @@ class Appointment(models.Model):
     doc_id = models.ForeignKey(User, on_delete=models.CASCADE, related_name='doc_id')
     date_time = models.DateTimeField()
     aadhar = models.ForeignKey(User, on_delete=models.CASCADE, related_name='aadhar')
+    status = models.CharField(default="pending", max_length=15)
     isApprovedByDoctor = models.BooleanField(default=False)
     isApprovedByReceptionist = models.BooleanField(default=False)
+
+class Payment(models.Model):
+
+    app_id = models.ForeignKey(Appointment, on_delete=models.CASCADE)
+    amount = models.IntegerField()
+    status = models.CharField(default="pending", max_length=15)

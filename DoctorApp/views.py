@@ -14,8 +14,31 @@ fields = {"fname":"First Name","lname":"Last Name","passw":"Password","cpassw":"
 def response(obj, code=200):
     return JsonResponse(obj, status=code, safe=False)
 
-def speciality_codes(reqest: HttpRequest):
+def speciality_codes(request: HttpRequest):
     return response(Specialities.get_speciality_dict())
+
+def speciality_based_docs(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error":"Doctor Accepts ONLY POST Requests!"}, 405)
+
+    if request.user.is_authenticated:
+        try: 
+            POST_DATA = json.loads(request.body)
+            code = POST_DATA["code"]
+            code = Specialities.objects.get(code=code)
+            docs = Doctor.objects.filter(special_code = code)
+            obj = {}
+            for i in docs:
+                obj[i.user.id] = {"name": i.user.first_name, "fees": i.fees}
+            return response(obj)
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"User Not authenticated!"}, 405)
+        
+
 
 def login(request: HttpRequest):
 
@@ -117,3 +140,7 @@ def register(request: HttpRequest):
     except Exception as Error:
         print(Error)
         return response({"error": "Internal Error Occurred"}, 500)
+
+def dashboard(request: HttpRequest):
+    pass
+

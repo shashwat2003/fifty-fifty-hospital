@@ -9,4 +9,5 @@ class Patient(models.Model):
     gender = models.CharField(max_length=1)
     dob = models.DateField()
     history = models.TextField()
+    registered_date = models.DateField(auto_now_add=True)
 

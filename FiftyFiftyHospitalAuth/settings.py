@@ -26,9 +26,31 @@ SECRET_KEY = '9=pfpist*cw4y#!i30$bf89itza2nus_!k=vrlhvv#=w_hhf_6'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['192.168.85.170']
+ALLOWED_HOSTS = ["*"]
+SESSION_COOKIE_SAMESITE = None
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = False
+#CORS_ORIGIN_ALLOW_ALL = True
+CORS_ALLOW_CREDENTIALS = True
+CORS_ORIGIN_WHITELIST = [
+'http://localhost:5500',
+'http://127.0.0.1:5500'
+]
 
 AUTH_USER_MODEL = "UserApp.User"
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'Access-Control-Allow-Origin',
+]
 # Application definition
 
 INSTALLED_APPS = [
@@ -45,9 +67,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    
     'corsheaders.middleware.CorsMiddleware',
-    'django_cookies_samesite.middleware.CookiesSameSite',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -57,7 +77,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ORIGIN_ALLOW_ALL = True
+
 
 ROOT_URLCONF = 'FiftyFiftyHospitalAuth.urls'
 
