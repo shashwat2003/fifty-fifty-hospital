@@ -29,3 +29,9 @@ class Payment(models.Model):
     app_id = models.ForeignKey(Appointment, on_delete=models.CASCADE)
     amount = models.IntegerField()
     status = models.CharField(default="pending", max_length=15)
+
+class Notification(models.Model):
+    aadhar = models.ForeignKey(User, on_delete=models.CASCADE)
+    message = models.TextField()
+    isSeen = models.BooleanField(default=False)
+    noti_time = models.DateTimeField(auto_now_add=True)

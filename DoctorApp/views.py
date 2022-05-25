@@ -1,15 +1,19 @@
+from shutil import ExecError
+from time import strftime
 from django.http import HttpRequest, JsonResponse
+
+from PatientApp.models import Patient
 from .models import Specialities
-from datetime import datetime
+from datetime import date, datetime
 import re, bcrypt, json
 from .models import Doctor
-from UserApp.models import User
-from django.contrib.auth import authenticate, login as auth_login
+from UserApp.models import Appointment, User, Notification
+from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 
 # Create your views here.
 fields = {"fname":"First Name","lname":"Last Name","passw":"Password","cpassw":"Confirm Password",
 "dob":"Date Of Birth","gender":"Gender","address":"Address","exp":"Work Experience","phone":"Mobile Number",
-"email":"E-Mail Address", "fees":"fees", "special_code":"Speciality Code", "qualification":"Qualification"}
+"email":"E-Mail Address", "fees":"fees", "special_code":"Speciality Code", "qualification":"Qualification", "app_id":"App ID"}
 
 def response(obj, code=200):
     return JsonResponse(obj, status=code, safe=False)
@@ -103,7 +107,7 @@ def register(request: HttpRequest):
             return response({"error":"Invalid Mobile Number!"}, 400)
         if address == "":
             return response({"error":"Address Cannot be Empty!"}, 400)
-        if gender not in ['M', 'F', 'O']:
+        if gender not in ['Male', 'Female', 'Other']:
             return response({"error":"Invalid Gender!"}, 400)
             
         if fees < 0:
@@ -142,5 +146,116 @@ def register(request: HttpRequest):
         return response({"error": "Internal Error Occurred"}, 500)
 
 def dashboard(request: HttpRequest):
-    pass
+    print(request.user.is_authenticated)
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        # doctor = Doctor.objects.get(user=request.user)
+        appointments = Appointment.objects.filter(doc_id = request.user, status="approved").order_by('date_time')
+        arr = []
+        for i in appointments:
+          obj = {}
+          obj["app_id"]=  i.id
+          obj["patient_name"] = i.aadhar.first_name 
+          obj["app_datetime"] = i.date_time.strftime("%d/%m/%Y, %I:%M:%S %p")
+          arr.append(obj)
 
+        appointments = Appointment.objects.filter(doc_id = request.user, status="checked").values('aadhar').distinct()
+        arr2 = []
+
+        for i in appointments:
+            user = User.objects.get(id=i["aadhar"])
+            latest = Appointment.objects.filter(doc_id = request.user, status="checked", aadhar=user).order_by('-date_time')[0]
+            obj = {}
+            obj["patient_name"] = user.first_name
+            obj["datetime"] = latest.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+            arr2.append(obj)
+        return response({"doc_name":request.user.first_name + request.user.last_name,"upcoming_appointments": arr,"patients": arr2 })
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+def approve_or_reject_appointment(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            POST_DATA = json.loads(request.body)
+            app_id = POST_DATA["app_id"]
+            status = POST_DATA["status"]
+            print(POST_DATA)
+            appointment = Appointment.objects.get(id=app_id)
+            if(status):
+                appointment.isApprovedByDoctor = True
+                appointment.status = "approved"
+            else:
+                appointment.isApprovedByDoctor = False
+                appointment.status = "rejected"
+            appointment.save()
+            return response({"success": "Status changed!"})
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+def reshedule_appointment(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            POST_DATA = json.loads(request.body)
+            app_id = POST_DATA["app_id"]
+            date_time = POST_DATA["datetime"]
+            date_time = datetime.strptime(date_time, "%d/%m/%Y, %I:%M:%S %p")
+            appointment = Appointment.objects.get(id=app_id)
+            appointment.date_time = date_time
+            appointment.save()
+            Notification.objects.create(user=appointment.aadhar,
+            message="Your Appointment has been re-sheduled to "+date_time.strftime("%d/%m/%Y, %I:%M:%S %p")+"! Sorry for the inconveneince!")
+            return response({"success": "ReSheduled!"})
+
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+
+def past_appointment(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            appointments = Appointment.objects.filter(doc_id=request.user, status="checked").order_by('-date_time')
+            arr = []
+            for i in appointments:
+                obj = {}
+                obj["patient_name"] = i.aadhar.first_name + i.aadhar.last_name
+                obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+def pending_approval(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            appointments = Appointment.objects.filter(doc_id=request.user, status="pending")
+            arr = []
+            for i in appointments:
+                obj = {}
+                obj["patient_name"] = i.aadhar.first_name + " "+ i.aadhar.last_name
+                obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                obj["app_id"] = i.id
+                arr.append(obj)
+            return response({"pending_approval": arr})
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+
+def logout(request:HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        auth_logout(request)
+        return response({"success":"Logout Sucessfull!"})
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)

@@ -6,7 +6,7 @@ class Patient(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone = models.CharField(max_length=10)
     address = models.TextField()
-    gender = models.CharField(max_length=1)
+    gender = models.CharField(max_length=6)
     dob = models.DateField()
     history = models.TextField()
     registered_date = models.DateField(auto_now_add=True)

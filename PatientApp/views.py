@@ -6,11 +6,11 @@ from django.http import HttpRequest, JsonResponse
 from DoctorApp.models import Doctor
 from .models import Patient
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
-from UserApp.models import User, Appointment, Payment
+from UserApp.models import User, Appointment, Payment, Notification
 
 fields = {"fname":"First Name","lname":"Last Name","passw":"Password","cpassw":"Confirm Password",
 "dob":"Date Of Birth","gender":"Gender","address":"Address","aadhar":"Aadhar","phone":"Mobile Number",
-"email":"E-Mail Address"}
+"email":"E-Mail Address","doc_id":"Doctor ID", "datetime":"Date and Time"}
 
 def response(obj, code=200):
     return JsonResponse(obj, safe=False, status=code)
@@ -71,7 +71,7 @@ def register(request: HttpRequest):
             return response({"error":"Invalid Mobile Number!"}, 400)
         if address == "":
             return response({"error":"Address Cannot be Empty!"}, 400)
-        if gender not in ['M', 'F', 'O']:
+        if gender not in ['Male', 'Female', 'Others']:
             return response({"error":"Invalid Gender!"}, 400)
             
         if not re.search('[0-9]{12}', aadhar):
@@ -107,7 +107,7 @@ def register(request: HttpRequest):
 def dashboard(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.PATIENT:
         patient = Patient.objects.get(user=request.user)
-        appointments = Appointment.objects.filter(aadhar=request.user)
+        appointments = Appointment.objects.filter(aadhar=request.user).exclude(status="checked")
         arr = []
         for i in appointments:
             obj = {}
@@ -128,17 +128,43 @@ def dashboard(request: HttpRequest):
     else:
         return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
 
+def get_notifications(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.PATIENT:
+        try:
+            notis = Notification.objects.filter(aadhar= request.user, isSeen=False)
+            arr = []
+            for i in notis:
+                obj = {}
+                obj["message"] = i.message
+                obj["noti_time"] = i.noti_time.strftime("%d/%m/%Y, %I:%M:%S %p")
+                arr.append(obj)
+            return response({"notis":arr})
+        
+        except KeyError as Error:
+            return response({"error": fields[Error.args[0]] + " not provided!"}, 501)
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Server Error! Please Try again later!"}, 500)
+
+
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
 def book_appointment(request: HttpRequest):
     if request.user.is_authenticated:
         try:
             POST_DATA = json.loads(request.body)
-            date_time = datetime.strptime(POST_DATA["datetime"], "%d/%m/%Y, %I:%M:%S %p").strftime("%Y-%m-%d %H:%M:%S")
+            date_time = POST_DATA["datetime"]
             doc_id = POST_DATA["doc_id"]
+
+            date_time = datetime.strptime(date_time, "%d/%m/%Y, %I:%M:%S %p")
+           
             doc = Doctor.objects.get(user=User.objects.get(id=doc_id))
             app = Appointment.objects.create(date_time=date_time, doc_id=User.objects.get(id=doc_id), 
                     aadhar=User.objects.get(id=request.user.id))
-            Payment.objects.create(app_id = app, amount=doc.fees)
-            return response({"success":"Appointment Booked Successfully! Pending for Approval!"})
+            Payment.objects.create(app_id = app, amount=doc.fees, status="paid")
+            return response({"success":"Appointment Booked Successfully!"})
         
         except KeyError as Error:
             return response({"error": fields[Error.args[0]] + " not provided!"}, 501)

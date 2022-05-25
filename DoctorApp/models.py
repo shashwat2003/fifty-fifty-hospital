@@ -3,13 +3,12 @@ from UserApp.models import User
 # Create your models here.
 
 class Doctor(models.Model):
-
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     special_code = models.ForeignKey('Specialities', on_delete=models.DO_NOTHING)
     qualification = models.TextField()
     dob = models.DateField()
     address = models.TextField()
-    gender = models.CharField(max_length=1)
+    gender = models.CharField(max_length=6)
     fees = models.IntegerField()
     phone = models.CharField(max_length=10, unique=True)
     exp = models.TextField()

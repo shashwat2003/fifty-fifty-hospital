@@ -34,7 +34,8 @@ SESSION_COOKIE_HTTPONLY = False
 CORS_ALLOW_CREDENTIALS = True
 CORS_ORIGIN_WHITELIST = [
 'http://localhost:5500',
-'http://127.0.0.1:5500'
+'http://127.0.0.1:5500',
+'http://10.21.67.30:5500'
 ]
 
 AUTH_USER_MODEL = "UserApp.User"
