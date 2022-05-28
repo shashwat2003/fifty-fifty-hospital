@@ -7,5 +7,6 @@ urlpatterns = [
     path('book_appointment/', book_appointment),
     path('cancel_appointment/', cancel_appointment),
     path('get_notifications/', get_notifications),
+    path('get_presc/', generate_presc),
     path('logout/', logout)
 ]

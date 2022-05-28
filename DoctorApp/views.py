@@ -2,7 +2,7 @@ from shutil import ExecError
 from time import strftime
 from django.http import HttpRequest, JsonResponse
 
-from PatientApp.models import Patient
+from PatientApp.models import Patient, Prescription
 from .models import Specialities
 from datetime import date, datetime
 import re, bcrypt, json
@@ -28,13 +28,20 @@ def speciality_based_docs(request: HttpRequest):
     if request.user.is_authenticated:
         try: 
             POST_DATA = json.loads(request.body)
-            code = POST_DATA["code"]
-            code = Specialities.objects.get(code=code)
-            docs = Doctor.objects.filter(special_code = code)
-            obj = {}
-            for i in docs:
-                obj[i.user.id] = {"name": i.user.first_name, "fees": i.fees}
-            return response(obj)
+            code = int(POST_DATA["code"])
+            if code == -1:
+                docs = Doctor.objects.all()
+                obj = {}
+                for i in docs:
+                    obj[i.user.id] = {"name": i.user.first_name, "fees": i.fees}
+                return response(obj)
+            else:
+                code = Specialities.objects.get(code=code)
+                docs = Doctor.objects.filter(special_code = code)
+                obj = {}
+                for i in docs:
+                    obj[i.user.id] = {"name": i.user.first_name, "fees": i.fees}
+                return response(obj)
 
         except Exception as Error:
             print(Error)
@@ -55,7 +62,7 @@ def login(request: HttpRequest):
         doc_id = POST_DATA['doc_id'].strip()
         passw  = POST_DATA['passw']
         user = authenticate(username= doc_id, password=passw)
-        if user is not None:
+        if user is not None and user.role == User.DOCTOR:
             auth_login(request, user)
             return response({"success":"Successful Login!"})
         else:
@@ -154,8 +161,8 @@ def dashboard(request: HttpRequest):
         for i in appointments:
           obj = {}
           obj["app_id"]=  i.id
-          obj["patient_name"] = i.aadhar.first_name 
-          obj["app_datetime"] = i.date_time.strftime("%d/%m/%Y, %I:%M:%S %p")
+          obj["patient_name"] = i.aadhar.first_name + " " + i.aadhar.last_name
+          obj["app_datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
           arr.append(obj)
 
         appointments = Appointment.objects.filter(doc_id = request.user, status="checked").values('aadhar').distinct()
@@ -163,8 +170,11 @@ def dashboard(request: HttpRequest):
 
         for i in appointments:
             user = User.objects.get(id=i["aadhar"])
+            patient = Patient.objects.get(user = user)
             latest = Appointment.objects.filter(doc_id = request.user, status="checked", aadhar=user).order_by('-date_time')[0]
             obj = {}
+            obj["patient_id"] = user.id
+            obj["patient_phone"] = patient.phone
             obj["patient_name"] = user.first_name
             obj["datetime"] = latest.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
             arr2.append(obj)
@@ -173,6 +183,8 @@ def dashboard(request: HttpRequest):
         return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
 
 def approve_or_reject_appointment(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Approve/Reject accepts only POST requests!"}, 405)
     if request.user.is_authenticated and request.user.role == User.DOCTOR:
         try:
             POST_DATA = json.loads(request.body)
@@ -183,9 +195,15 @@ def approve_or_reject_appointment(request: HttpRequest):
             if(status):
                 appointment.isApprovedByDoctor = True
                 appointment.status = "approved"
+                Notification.objects.create(aadhar=appointment.aadhar,
+                    message="Your appointment dated "+appointment.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")+" for "+
+                    appointment.doc_id.first_name+" has been approved!")
             else:
                 appointment.isApprovedByDoctor = False
                 appointment.status = "rejected"
+                Notification.objects.create(aadhar=appointment.aadhar,
+                    message="Your appointment dated "+appointment.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")+" for "+
+                    appointment.doc_id.first_name+" has been rejected!")
             appointment.save()
             return response({"success": "Status changed!"})
 
@@ -196,6 +214,8 @@ def approve_or_reject_appointment(request: HttpRequest):
         return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
 
 def reshedule_appointment(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Re-schedule appointments accepts only POST requests!"}, 405)
     if request.user.is_authenticated and request.user.role == User.DOCTOR:
         try:
             POST_DATA = json.loads(request.body)
@@ -205,7 +225,7 @@ def reshedule_appointment(request: HttpRequest):
             appointment = Appointment.objects.get(id=app_id)
             appointment.date_time = date_time
             appointment.save()
-            Notification.objects.create(user=appointment.aadhar,
+            Notification.objects.create(aadhar=appointment.aadhar,
             message="Your Appointment has been re-sheduled to "+date_time.strftime("%d/%m/%Y, %I:%M:%S %p")+"! Sorry for the inconveneince!")
             return response({"success": "ReSheduled!"})
 
@@ -224,8 +244,11 @@ def past_appointment(request: HttpRequest):
             arr = []
             for i in appointments:
                 obj = {}
-                obj["patient_name"] = i.aadhar.first_name + i.aadhar.last_name
+                obj["patient_name"] = i.aadhar.first_name + " " +i.aadhar.last_name
                 obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                arr.append(obj)
+
+            return response({"past_appointments": arr})
 
         except Exception as Error:
             print(Error)
@@ -245,6 +268,58 @@ def pending_approval(request: HttpRequest):
                 obj["app_id"] = i.id
                 arr.append(obj)
             return response({"pending_approval": arr})
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+def get_patient_details(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Patient Details accepts only POST requests!"}, 405)
+
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            POST_DATA = json.loads(request.body)
+            patient_id = POST_DATA["patient_id"]
+            user = User.objects.get(id=patient_id)
+            patient = Patient.objects.get(user=user)
+
+            appointments = Appointment.objects.filter(aadhar=user, doc_id=request.user, status="checked").order_by('-date_time')
+            arr = []
+            for i in appointments:
+                obj = {}
+                obj["app_id"] = i.id
+                obj["date_time"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                arr.append(obj)
+            return response({"patient_details": {"fname":user.first_name,"lname":user.last_name,
+            "email":user.email,"aadhar":user.username,"gender":patient.gender,"phone":patient.phone,
+            "address":patient.address,"dob":patient.dob,"history":patient.history,"registered_date": patient.registered_date},
+            "appointment_details": arr })
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+
+def add_prescript(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Add Prescription accepts only POST requests!"}, 405)
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            POST_DATA = json.loads(request.body)
+            app_id = POST_DATA["app_id"]
+            presc = json.dumps(POST_DATA["presc"])
+            appointment = Appointment.objects.get(id=app_id)
+            appointment.status = "checked"
+            appointment.save()
+            Prescription.objects.create(appointment=appointment, presc =presc)
+            Notification.objects.create(aadhar=appointment.aadhar, message="Your prescription dated "+
+                appointment.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")+" by " + 
+                appointment.doc_id.first_name +" has been added")
+            return response({"success": "Prescription has been added and a notification has been sent to the patient!"})
 
         except Exception as Error:
             print(Error)

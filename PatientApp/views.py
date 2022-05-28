@@ -1,12 +1,17 @@
 # Create your views here.
 import json, re, bcrypt
+from shutil import ExecError
 from datetime import datetime
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, JsonResponse, HttpResponse
 
 from DoctorApp.models import Doctor
-from .models import Patient
+from .models import Patient, Prescription
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from UserApp.models import User, Appointment, Payment, Notification
+
+from django.template.loader import get_template
+from xhtml2pdf import pisa
+from django.contrib.staticfiles import finders
 
 fields = {"fname":"First Name","lname":"Last Name","passw":"Password","cpassw":"Confirm Password",
 "dob":"Date Of Birth","gender":"Gender","address":"Address","aadhar":"Aadhar","phone":"Mobile Number",
@@ -26,7 +31,7 @@ def login(request: HttpRequest):
         user = authenticate(request,username=aadhar, password=passw)
        
 
-        if user is not None:
+        if user is not None and user.role == User.PATIENT:
             auth_login(request, user)
             return response({"success":"Successful Login!"})
         else:
@@ -117,7 +122,6 @@ def dashboard(request: HttpRequest):
             obj["appointment"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
             obj["status"] = i.status.upper()
             obj["app_id"] = i.id
-            
             arr.append(obj)
 
         return response({"patient_details": {"fname":request.user.first_name,"lname":request.user.last_name,
@@ -152,7 +156,7 @@ def get_notifications(request: HttpRequest):
         return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
 
 def book_appointment(request: HttpRequest):
-    if request.user.is_authenticated:
+    if request.user.is_authenticated and request.user.role == User.PATIENT:
         try:
             POST_DATA = json.loads(request.body)
             date_time = POST_DATA["datetime"]
@@ -206,3 +210,28 @@ def logout(request:HttpRequest):
     else:
         return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
 
+def generate_presc(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Presception requests only POST requests!"}, 405)
+
+    try:
+        POST_DATA = json.loads(request.body)
+        app_id = POST_DATA["app_id"]
+        appointment  = Appointment.objects.get(id=app_id)
+        presc = Prescription.objects.get(appointment=appointment)
+        doc = Doctor.objects.get(user=appointment.doc_id)
+        patient = Patient.objects.get(user=appointment.aadhar)
+
+        template_path = 'presc.html'
+        context = {'patient_details': {"name": appointment.aadhar.first_name + " " + appointment.aadhar.last_name,"address":patient.address, "phone":patient.phone}, 
+        "appointment_details":{"date_time":appointment.date_time.strftime("%d/%m/%Y %I:%M:%S %p"),"doc_name":appointment.doc_id.first_name,"speciality":doc.special_code.name,"doc_num":doc.phone,"id":appointment.id},
+        "prescription": json.loads(presc.presc)}
+        # Create a Django response object, and specify content_type as pdf
+        # find the template and render it.
+        template = get_template(template_path)
+        html = template.render(context)
+        return HttpResponse(html)
+
+    except Exception as Error:
+        print(Error)
+        return response({"error": "Internal Server Error! Please Try again later!"}, 500)
