@@ -13,7 +13,7 @@ from django.contrib.auth import authenticate, login as auth_login, logout as aut
 # Create your views here.
 fields = {"fname":"First Name","lname":"Last Name","passw":"Password","cpassw":"Confirm Password",
 "dob":"Date Of Birth","gender":"Gender","address":"Address","exp":"Work Experience","phone":"Mobile Number",
-"email":"E-Mail Address", "fees":"fees", "special_code":"Speciality Code", "qualification":"Qualification", "app_id":"App ID"}
+"email":"E-Mail Address", "fees":"fees", "special_code":"Speciality Code", "qualification":"Qualification", "app_id":"App ID","doc_id":"Doctor ID"}
 
 def response(obj, code=200):
     return JsonResponse(obj, status=code, safe=False)
@@ -29,7 +29,7 @@ def speciality_based_docs(request: HttpRequest):
         try: 
             POST_DATA = json.loads(request.body)
             code = int(POST_DATA["code"])
-            if code == -1:
+            if code == 0:
                 docs = Doctor.objects.all()
                 obj = {}
                 for i in docs:
@@ -67,11 +67,10 @@ def login(request: HttpRequest):
             return response({"success":"Successful Login!"})
         else:
             return response({"error":"Invalid DOC ID or Password!"}, 400)
-    
-        
+
 
     except KeyError as Error:
-        return response({"error": Error.args[0] + " not provided!"}, 501)
+        return response({"error": fields[Error.args[0]] + " not provided!"}, 501)
     
     except Exception as Error:
         return response({"error": Error.args}, 500)
@@ -244,6 +243,7 @@ def past_appointment(request: HttpRequest):
             arr = []
             for i in appointments:
                 obj = {}
+                obj["app_id"] = i.id
                 obj["patient_name"] = i.aadhar.first_name + " " +i.aadhar.last_name
                 obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
                 arr.append(obj)
@@ -259,7 +259,7 @@ def past_appointment(request: HttpRequest):
 def pending_approval(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.DOCTOR:
         try:
-            appointments = Appointment.objects.filter(doc_id=request.user, status="pending")
+            appointments = Appointment.objects.filter(doc_id=request.user, status="pending", isApprovedByReceptionist=True)
             arr = []
             for i in appointments:
                 obj = {}

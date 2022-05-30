@@ -20,7 +20,7 @@ class Specialities(models.Model):
 
     def get_speciality_dict():
         list = Specialities.objects.values_list()
-        dict = {-1:"All Doctors"}
+        dict = {0:"All Doctors"}
         for i in range(len(list)):
             dict[list[i][0]] = list[i][1]
         return dict
