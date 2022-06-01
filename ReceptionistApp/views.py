@@ -4,9 +4,9 @@ from django.shortcuts import render
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from DoctorApp.models import Doctor, Specialities
 from django.db.models import Q
-from UserApp.models import Appointment, User, Notification
+from UserApp.models import Appointment, Payment, User, Notification
 from PatientApp.models import Patient
-
+from datetime import datetime
 # Create your views here.
 
 def response(obj, code=200):
@@ -34,13 +34,15 @@ def login(request: HttpRequest):
 def dashboard(request: HttpRequest):
     try:
         if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
-            appointments = Appointment.objects.filter(status="approved").order_by('-date_time')
+            appointments = Appointment.objects.filter(status="approved").order_by('date_time')
             arr = []
             for i in appointments:
                 obj = {}
+                obj["app_id"] = i.id
                 obj["patient_name"] = i.aadhar.first_name + " " + i.aadhar.last_name
                 obj["doctor_name"] = i.doc_id.first_name + " " + i.doc_id.last_name
                 obj["datetime"] =  i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                arr.append(obj)
             return response({"upcoming_appointments": arr})
         else:
             return response({"error":"Unauthorised Access"}, 401)
@@ -193,19 +195,21 @@ def doctor_past_appointments(request: HttpRequest):
 def all_patients(request: HttpRequest):
     try:
         if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
-            POST_DATA = json.loads(request.body)
+            # POST_DATA = json.loads(request.body)
             patients = Patient.objects.all()
             arr = []
             for i in patients:
                 obj = {}
-                obj["aadhar"]=  i.user.aadhar
+                obj["patient_id"] = i.user.id
+                obj["aadhar"]=  i.user.username
                 obj["patient_name"] = i.user.first_name + " " + i.user.last_name
                 obj["dob"] = i.dob.strftime("%a %b %d %Y")
+                obj["phone"] = i.phone
                 obj["gender"] = i.gender
                 obj["reg_date"] = i.registered_date.strftime("%a %b %d %Y, %I:%M:%S %p")
                 arr.append(obj)
            
-            return response({"past_appointments": arr})
+            return response({"patients": arr})
         else:
             return response({"error":"Unauthorised Access"}, 401)
                 
@@ -220,8 +224,8 @@ def patient_details(request: HttpRequest):
     try:
         if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
             POST_DATA = json.loads(request.body)
-            aadhar = POST_DATA["aadhar"]
-            user = User.objects.get(username=aadhar)
+            patient_id = POST_DATA["patient_id"]
+            user = User.objects.get(id=patient_id)
             patient = Patient.objects.get(user=user)
             appointments = Appointment.objects.filter(aadhar = user, status="approved").order_by('date_time')
             arr = []
@@ -256,7 +260,7 @@ def patient_details(request: HttpRequest):
             
             return response({"patient_details": {"name":user.first_name + " " + user.last_name,"email":user.email, 
             "dob": patient.dob.strftime("%a %b %d %Y"),"address":patient.address,"gender":patient.gender,
-            "history":patient.history,"phone":patient.phone,"reg_date":patient.exp},"upcoming_appointments":arr,"doctors":arr2,"past_appointments":arr3})
+            "history":patient.history,"phone":patient.phone,"reg_date":patient.registered_date},"upcoming_appointments":arr,"doctors":arr2,"past_appointments":arr3})
         else:
             return response({"error":"Unauthorised Access"}, 401)        
         
@@ -279,6 +283,9 @@ def approve_or_reject_appointment(request: HttpRequest):
             else:
                 appointment.isApprovedByReceptionist = False
                 appointment.status = "rejected"
+                payment = Payment.objects.get(app_id = appointment)
+                payment.status="refund"
+                payment.save()
                 Notification.objects.create(aadhar=appointment.aadhar,
                     message="Your appointment dated "+appointment.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")+" for "+
                     appointment.doc_id.first_name+" has been rejected!")
@@ -295,5 +302,39 @@ def logout(request:HttpRequest):
     if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
         auth_logout(request)
         return response({"success":"Logout Sucessfull!"})
+    else:
+        return response({"error":"Unauthorised Access"}, 401)
+
+def generate_report_date_wise(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Approve/Reject accepts only POST requests!"}, 405)
+    if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
+    # if True:
+        try:
+            POST_DATA = json.loads(request.body)
+            start_date = datetime.strptime(POST_DATA["start_date"],"%a %b %d %Y")
+            end_date = datetime.strptime(POST_DATA["end_date"], "%a %b %d %Y")
+            code = POST_DATA["code"]
+            doctors = Doctor.objects.filter(special_code=Specialities.objects.get(code=code))
+            users = []
+            for i in doctors:
+                users.append(i.user)
+            # users = doctors.user_set.all()
+            # users = User.objects.filter()
+            appointments = Appointment.objects.filter(date_time__gt=start_date, date_time__lt=end_date, doc_id__in=users, status="checked")
+            arr = []
+            for i in appointments:
+                obj = {}
+                obj["app_id"] = i.id
+                obj["doc_name"] = i.doc_id.first_name + " " + i.doc_id.last_name
+                obj["patient_name"] = i.aadhar.first_name + " " + i.aadhar.last_name
+                obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                arr.append(obj)
+
+            return response({"appointments": arr})
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
     else:
         return response({"error":"Unauthorised Access"}, 401)

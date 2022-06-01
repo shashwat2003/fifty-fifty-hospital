@@ -1,6 +1,5 @@
 # Create your views here.
-import json, re, bcrypt
-from shutil import ExecError
+import json, re
 from datetime import datetime
 from django.http import HttpRequest, JsonResponse, HttpResponse
 
@@ -10,8 +9,6 @@ from django.contrib.auth import authenticate, login as auth_login, logout as aut
 from UserApp.models import User, Appointment, Payment, Notification
 
 from django.template.loader import get_template
-from xhtml2pdf import pisa
-from django.contrib.staticfiles import finders
 
 fields = {"fname":"First Name","lname":"Last Name","passw":"Password","cpassw":"Confirm Password",
 "dob":"Date Of Birth","gender":"Gender","address":"Address","aadhar":"Aadhar","phone":"Mobile Number",
@@ -56,7 +53,7 @@ def register(request: HttpRequest):
         lname = POST_DATA['lname'].strip()
         phone = POST_DATA['phone'].strip()
         email = POST_DATA['email'].strip()
-        aadhar = str(POST_DATA['aadhar'])
+        aadhar = POST_DATA['aadhar'].strip()
         address = POST_DATA['address'].strip()
         gender = POST_DATA['gender'].strip()
         dob = datetime.strptime(POST_DATA['dob'], '%a %b %d %Y').strftime("%Y-%m-%d")
@@ -79,8 +76,11 @@ def register(request: HttpRequest):
         if gender not in ['Male', 'Female', 'Others']:
             return response({"error":"Invalid Gender!"}, 400)
             
-        if not re.search('[0-9]{12}', aadhar):
-            return response({"error": "Invalid Aadhar Number!"}, 400)
+        # if not re.search('[0-9]{12}', aadhar):
+        #     return response({"error": "Invalid Aadhar Number!"}, 400)
+        if aadhar == "":
+            return response({"error": "Invalid Username!"}, 400)
+
                 
         if(passw != cpassw or passw == "" or cpassw == ""):
             return response({"error":"Passwords Don't Match!"}, 400)
@@ -112,7 +112,7 @@ def register(request: HttpRequest):
 def dashboard(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.PATIENT:
         patient = Patient.objects.get(user=request.user)
-        appointments = Appointment.objects.filter(aadhar=request.user).exclude(status="checked")
+        appointments = Appointment.objects.filter(aadhar=request.user, status__in=["pending","approved"])
         arr = []
         for i in appointments:
             obj = {}
@@ -123,14 +123,16 @@ def dashboard(request: HttpRequest):
             obj["status"] = i.status.upper()
             obj["app_id"] = i.id
             arr.append(obj)
+            
+        count  = Notification.objects.filter(aadhar=request.user, isSeen=False).count()
 
         return response({"patient_details": {"fname":request.user.first_name,"lname":request.user.last_name,
         "email":request.user.email,"aadhar":request.user.username,"gender":patient.gender,"phone":patient.phone,
         "address":patient.address,"dob":patient.dob,"history":patient.history,"registered_date": patient.registered_date},
-        "appointment_details": arr })
+        "appointment_details": arr,"notis": count })
 
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
 def get_notifications(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.PATIENT:
@@ -139,8 +141,9 @@ def get_notifications(request: HttpRequest):
             arr = []
             for i in notis:
                 obj = {}
+                obj["noti_id"] = i.id
                 obj["message"] = i.message
-                obj["noti_time"] = i.noti_time.strftime("%d/%m/%Y, %I:%M:%S %p")
+                obj["noti_time"] = i.noti_time.strftime("%a %b %d %Y, %I:%M:%S %p")
                 arr.append(obj)
             return response({"notis":arr})
         
@@ -153,7 +156,32 @@ def get_notifications(request: HttpRequest):
 
 
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unathourised Access"}, 401)
+
+def mark_as_read(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Presception requests only POST requests!"}, 405)
+
+    if request.user.is_authenticated and request.user.role == User.PATIENT:
+        try:
+            POST_DATA = json.loads(request.body)
+            noti_id = POST_DATA["noti_id"]
+            noti = Notification.objects.get(id=noti_id)
+            noti.isSeen = True
+            noti.save()
+            
+            return response({"success":"Marked as Read!"})
+        
+        except KeyError as Error:
+            return response({"error": fields[Error.args[0]] + " not provided!"}, 501)
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Server Error! Please Try again later!"}, 500)
+
+
+    else:
+        return response({"error":"Unathourised Access"}, 401)
 
 def book_appointment(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.PATIENT:
@@ -179,7 +207,7 @@ def book_appointment(request: HttpRequest):
 
 
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
 
 def cancel_appointment(request: HttpRequest):
@@ -188,6 +216,9 @@ def cancel_appointment(request: HttpRequest):
             POST_DATA = json.loads(request.body)
             app_id = POST_DATA["app_id"]
             app = Appointment.objects.get(id=app_id)
+            payment = Payment.objects.get(app_id = app)
+            payment.status="refund"
+            payment.save()
             app.status = "cancelled"
             app.save()
             return response({"success":"Appointment Cancelled Successfully!"})
@@ -201,14 +232,14 @@ def cancel_appointment(request: HttpRequest):
 
 
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
 def logout(request:HttpRequest):
     if request.user.is_authenticated:
         auth_logout(request)
         return response({"success":"Logout Sucessfull!"})
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
 def generate_presc(request: HttpRequest):
     if request.method != "POST":
@@ -235,3 +266,38 @@ def generate_presc(request: HttpRequest):
     except Exception as Error:
         print(Error)
         return response({"error": "Internal Server Error! Please Try again later!"}, 500)
+
+def past_appointment(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.PATIENT:
+        try:
+            appointments = Appointment.objects.filter(aadhar=request.user, status="checked").order_by('-date_time')
+            arr = []
+            for i in appointments:
+                doc = Doctor.objects.get(user=i.doc_id)
+                obj = {}
+                obj["app_id"] = i.id
+                obj["doc_name"] = i.doc_id.first_name + " " +i.doc_id.last_name
+                obj["doc_spec"] = doc.special_code.name
+                obj["status"] = i.status.upper()
+                obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                arr.append(obj)
+            appointments = Appointment.objects.filter(aadhar=request.user, status__in=["rejected","cancelled"]).order_by('-date_time')
+            arr2 = []
+            for i in appointments:
+                doc = Doctor.objects.get(user=i.doc_id)
+                obj = {}
+                obj["app_id"] = i.id
+                obj["doc_name"] = i.doc_id.first_name + " " +i.doc_id.last_name
+                obj["doc_spec"] = doc.special_code.name
+                obj["status"] = i.status.upper()
+                obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                arr2.append(obj)
+
+
+            return response({"checked_appointments": arr,"other_appointments": arr2})
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Unauthorised Access!"}, 401)

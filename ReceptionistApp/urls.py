@@ -9,6 +9,8 @@ urlpatterns = [
     path('doctor_past_apts/', doctor_past_appointments),
     path('pending_appointments/', pending_appointments),
     path('all_patients/', all_patients),
+    path('patient_details/', patient_details),
     path('change_status/', approve_or_reject_appointment),
+    path('report_date_wise/', generate_report_date_wise),
     
 ]

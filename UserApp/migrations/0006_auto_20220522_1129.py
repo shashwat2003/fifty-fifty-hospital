@@ -9,7 +9,7 @@ from UserApp.models import User
 
 class Migration(migrations.Migration):
 
-    aadhar  = User.objects.get(username="123456789123")
+    aadhar  = User.objects.get(username="shashwat2003")
     doc = User.objects.get(username="D16")
     dependencies = [
         ('UserApp', '0005_auto_20220522_1106'),

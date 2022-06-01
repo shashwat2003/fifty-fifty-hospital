@@ -25,3 +25,7 @@ class Specialities(models.Model):
             dict[list[i][0]] = list[i][1]
         return dict
 
+class Diseases(models.Model):
+    special_code = models.ForeignKey(Specialities, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+

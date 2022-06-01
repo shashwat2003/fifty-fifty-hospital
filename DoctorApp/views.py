@@ -3,11 +3,11 @@ from time import strftime
 from django.http import HttpRequest, JsonResponse
 
 from PatientApp.models import Patient, Prescription
-from .models import Specialities
+from .models import Diseases, Specialities
 from datetime import date, datetime
 import re, bcrypt, json
 from .models import Doctor
-from UserApp.models import Appointment, User, Notification
+from UserApp.models import Appointment, User, Notification, Payment
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 
 # Create your views here.
@@ -41,6 +41,34 @@ def speciality_based_docs(request: HttpRequest):
                 obj = {}
                 for i in docs:
                     obj[i.user.id] = {"name": i.user.first_name, "fees": i.fees}
+                return response(obj)
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"User Not authenticated!"}, 405)
+
+def speciality_based_diseases(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error":"Doctor Accepts ONLY POST Requests!"}, 405)
+
+    if request.user.is_authenticated:
+        try: 
+            POST_DATA = json.loads(request.body)
+            code = int(POST_DATA["code"])
+            if code == 0:
+                diseases = Diseases.objects.all()
+                obj = {}
+                for i in diseases:
+                    obj[i.id] = i.name 
+                return response(obj)
+            else:
+                code = Specialities.objects.get(code=code)
+                docs = Diseases.objects.filter(special_code = code)
+                obj = {}
+                for i in docs:
+                    obj[i.id] = i.name
                 return response(obj)
 
         except Exception as Error:
@@ -179,7 +207,7 @@ def dashboard(request: HttpRequest):
             arr2.append(obj)
         return response({"doc_name":request.user.first_name + request.user.last_name,"upcoming_appointments": arr,"patients": arr2 })
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
 def approve_or_reject_appointment(request: HttpRequest):
     if request.method != "POST":
@@ -200,6 +228,9 @@ def approve_or_reject_appointment(request: HttpRequest):
             else:
                 appointment.isApprovedByDoctor = False
                 appointment.status = "rejected"
+                payment = Payment.objects.get(app_id = appointment)
+                payment.status="refund"
+                payment.save()
                 Notification.objects.create(aadhar=appointment.aadhar,
                     message="Your appointment dated "+appointment.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")+" for "+
                     appointment.doc_id.first_name+" has been rejected!")
@@ -210,7 +241,7 @@ def approve_or_reject_appointment(request: HttpRequest):
             print(Error)
             return response({"error": "Internal Error Occurred"}, 500)
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
 def reshedule_appointment(request: HttpRequest):
     if request.method != "POST":
@@ -233,8 +264,29 @@ def reshedule_appointment(request: HttpRequest):
             print(Error)
             return response({"error": "Internal Error Occurred"}, 500)
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access!"}, 401)
 
+def book_appointment(request: HttpRequest):
+    if request.user.is_authenticated and request.user.role == User.DOCTOR:
+        try:
+            POST_DATA = json.loads(request.body)
+            date_time = POST_DATA["datetime"]
+            patient_id = POST_DATA["patient_id"]
+            date_time = datetime.strptime(date_time, "%d/%m/%Y, %I:%M:%S %p")
+            app = Appointment.objects.create(date_time=date_time, aadhar=User.objects.get(id=patient_id), 
+                    doc_id=User.objects.get(id=request.user.id), isApprovedByReceptionist=True, isApprovedByDoctor=True, status="approved")
+            Payment.objects.create(app_id = app, amount=Doctor.objects.get(user=request.user).fees, status="paid")
+            return response({"success":"Appointment Booked Successfully!"})
+        
+        except KeyError as Error:
+            return response({"error": fields[Error.args[0]] + " not provided!"}, 501)
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Server Error! Please Try again later!"}, 500)
+
+    else:
+        return response({"error":"Unauthorised Access"}, 401)
 
 def past_appointment(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.DOCTOR:
@@ -254,7 +306,8 @@ def past_appointment(request: HttpRequest):
             print(Error)
             return response({"error": "Internal Error Occurred"}, 500)
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access"}, 401)
+
 
 def pending_approval(request: HttpRequest):
     if request.user.is_authenticated and request.user.role == User.DOCTOR:
@@ -273,7 +326,8 @@ def pending_approval(request: HttpRequest):
             print(Error)
             return response({"error": "Internal Error Occurred"}, 500)
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access"}, 401)
+
 
 def get_patient_details(request: HttpRequest):
     if request.method != "POST":
@@ -302,7 +356,8 @@ def get_patient_details(request: HttpRequest):
             print(Error)
             return response({"error": "Internal Error Occurred"}, 500)
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access"}, 401)
+
 
 def add_prescript(request: HttpRequest):
     if request.method != "POST":
@@ -311,9 +366,15 @@ def add_prescript(request: HttpRequest):
         try:
             POST_DATA = json.loads(request.body)
             app_id = POST_DATA["app_id"]
+            disease_id = POST_DATA["d_id"]
             presc = json.dumps(POST_DATA["presc"])
             appointment = Appointment.objects.get(id=app_id)
+
+            if Prescription.objects.filter(appointment=appointment).exists():
+                return response({"error": "Prescription Allready Exists!"}, 403)
+
             appointment.status = "checked"
+            appointment.disease = Diseases.objects.get(id=disease_id)
             appointment.save()
             Prescription.objects.create(appointment=appointment, presc =presc)
             Notification.objects.create(aadhar=appointment.aadhar, message="Your prescription dated "+
@@ -325,7 +386,7 @@ def add_prescript(request: HttpRequest):
             print(Error)
             return response({"error": "Internal Error Occurred"}, 500)
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access"}, 401)
 
 
 def logout(request:HttpRequest):
@@ -333,4 +394,5 @@ def logout(request:HttpRequest):
         auth_logout(request)
         return response({"success":"Logout Sucessfull!"})
     else:
-        return response({"error":"Bhaisahab y kuch zyada nhi ho gaya?"}, 401)
+        return response({"error":"Unauthorised Access"}, 401)
+
