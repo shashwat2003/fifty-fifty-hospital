@@ -314,8 +314,7 @@ def generate_report_date_wise(request: HttpRequest):
             POST_DATA = json.loads(request.body)
             start_date = datetime.strptime(POST_DATA["start_date"],"%a %b %d %Y")
             end_date = datetime.strptime(POST_DATA["end_date"], "%a %b %d %Y")
-            code = POST_DATA["code"]
-            
+            code = int(POST_DATA["code"])
             if code == 0:
                 appointments = Appointment.objects.filter(date_time__gt=start_date, date_time__lt=end_date, status="checked")
                 arr = []
