@@ -4,7 +4,7 @@ from .views import *
 urlpatterns = [
     path('speciality_code/', speciality_codes),
     path('special_docs/', speciality_based_docs),
-    path('special_diseases/', speciality_based_docs),
+    path('special_diseases/', speciality_based_diseases),
     path('pending_apps/', pending_approval),
     path('past_apps/', past_appointment),
     path('book_appointment/', book_appointment),

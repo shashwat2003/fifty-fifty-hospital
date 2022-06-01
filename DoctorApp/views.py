@@ -61,7 +61,7 @@ def speciality_based_diseases(request: HttpRequest):
                 diseases = Diseases.objects.all()
                 obj = {}
                 for i in diseases:
-                    obj[i.id] = i.name 
+                    obj[i.id] = i.name + "(" + i.special_code.name + ")"
                 return response(obj)
             else:
                 code = Specialities.objects.get(code=code)

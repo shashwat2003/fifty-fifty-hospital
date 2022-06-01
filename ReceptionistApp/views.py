@@ -2,7 +2,7 @@ import json
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import render
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
-from DoctorApp.models import Doctor, Specialities
+from DoctorApp.models import Diseases, Doctor, Specialities
 from django.db.models import Q
 from UserApp.models import Appointment, Payment, User, Notification
 from PatientApp.models import Patient
@@ -307,7 +307,7 @@ def logout(request:HttpRequest):
 
 def generate_report_date_wise(request: HttpRequest):
     if request.method != "POST":
-        return response({"error": "Approve/Reject accepts only POST requests!"}, 405)
+        return response({"error": "Generate Report accepts only POST requests!"}, 405)
     if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
     # if True:
         try:
@@ -315,13 +315,57 @@ def generate_report_date_wise(request: HttpRequest):
             start_date = datetime.strptime(POST_DATA["start_date"],"%a %b %d %Y")
             end_date = datetime.strptime(POST_DATA["end_date"], "%a %b %d %Y")
             code = POST_DATA["code"]
-            doctors = Doctor.objects.filter(special_code=Specialities.objects.get(code=code))
-            users = []
-            for i in doctors:
-                users.append(i.user)
-            # users = doctors.user_set.all()
-            # users = User.objects.filter()
-            appointments = Appointment.objects.filter(date_time__gt=start_date, date_time__lt=end_date, doc_id__in=users, status="checked")
+            
+            if code == 0:
+                appointments = Appointment.objects.filter(date_time__gt=start_date, date_time__lt=end_date, status="checked")
+                arr = []
+                for i in appointments:
+                    obj = {}
+                    obj["app_id"] = i.id
+                    obj["doc_name"] = i.doc_id.first_name + " " + i.doc_id.last_name
+                    obj["patient_name"] = i.aadhar.first_name + " " + i.aadhar.last_name
+                    obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                    arr.append(obj)
+
+                return response({"appointments": arr})
+            else:
+                doctors = Doctor.objects.filter(special_code=Specialities.objects.get(code=code))
+                users = []
+                for i in doctors:
+                    users.append(i.user)
+                # users = doctors.user_set.all()
+                # users = User.objects.filter()
+                appointments = Appointment.objects.filter(date_time__gt=start_date, date_time__lt=end_date, doc_id__in=users, status="checked")
+                arr = []
+                for i in appointments:
+                    obj = {}
+                    obj["app_id"] = i.id
+                    obj["doc_name"] = i.doc_id.first_name + " " + i.doc_id.last_name
+                    obj["patient_name"] = i.aadhar.first_name + " " + i.aadhar.last_name
+                    obj["datetime"] = i.date_time.strftime("%a %b %d %Y, %I:%M:%S %p")
+                    arr.append(obj)
+
+                return response({"appointments": arr})
+
+        except Exception as Error:
+            print(Error)
+            return response({"error": "Internal Error Occurred"}, 500)
+    else:
+        return response({"error":"Unauthorised Access"}, 401)
+
+def generate_report_disease_wise(request: HttpRequest):
+    if request.method != "POST":
+        return response({"error": "Generate Report accepts only POST requests!"}, 405)
+    if request.user.is_authenticated and request.user.role == User.RECEPTIONIST:
+    # if True:
+        try:
+            POST_DATA = json.loads(request.body)
+            start_date = datetime.strptime(POST_DATA["start_date"],"%a %b %d %Y")
+            end_date = datetime.strptime(POST_DATA["end_date"], "%a %b %d %Y")
+            d_id = POST_DATA["d_id"]
+            disease = Diseases.objects.get(id=d_id)
+    
+            appointments = Appointment.objects.filter(date_time__gt=start_date, date_time__lt=end_date, status="checked", disease=disease)
             arr = []
             for i in appointments:
                 obj = {}

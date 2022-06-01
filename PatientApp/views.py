@@ -255,10 +255,10 @@ def generate_presc(request: HttpRequest):
 
         template_path = 'presc.html'
         context = {'patient_details': {"name": appointment.aadhar.first_name + " " + appointment.aadhar.last_name,"address":patient.address, "phone":patient.phone}, 
-        "appointment_details":{"date_time":appointment.date_time.strftime("%d/%m/%Y %I:%M:%S %p"),"doc_name":appointment.doc_id.first_name,"speciality":doc.special_code.name,"doc_num":doc.phone,"id":appointment.id},
+        "appointment_details":{"date_time":appointment.date_time.strftime("%d/%m/%Y %I:%M:%S %p"),"doc_name":appointment.doc_id.first_name,"speciality":doc.special_code.name,"doc_num":doc.phone,"id":appointment.id,
+        "disease":appointment.disease.name},
         "prescription": json.loads(presc.presc)}
-        # Create a Django response object, and specify content_type as pdf
-        # find the template and render it.
+        
         template = get_template(template_path)
         html = template.render(context)
         return HttpResponse(html)
